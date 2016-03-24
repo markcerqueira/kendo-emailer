@@ -1,0 +1,25 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+mainClassName = 'KendoEmailer'
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+version = '1.0'
+
+run {
+    if (System.getProperty("exec.args") != null) {
+        args System.getProperty("exec.args").split()
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compile 'com.google.api-client:google-api-client:1.20.0'
+    compile 'com.google.oauth-client:google-oauth-client-jetty:1.20.0'
+    compile 'com.google.apis:google-api-services-gmail:v1-rev29-1.20.0'
+    compile 'com.google.apis:google-api-services-calendar:v3-rev125-1.20.0'
+    compile 'com.sun.mail:javax.mail:1.5.5'
+}
