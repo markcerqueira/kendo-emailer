@@ -1,11 +1,25 @@
 import com.google.api.client.util.DateTime;
 import com.google.api.services.calendar.model.Event;
+import models.Contact;
+import models.TextMessageHelper;
 
-import javax.mail.internet.InternetAddress;
-import java.io.*;
-import java.text.SimpleDateFormat;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.*;
 
+/**
+ * KendoEmailer.java
+ *
+ * Main entry-point for the app.
+ *
+ * Run from the command-line:
+ *  gradle -q run
+ *
+ * And with arguments:
+ *  gradle -q run -Dexec.args="preview"
+ */
 public class KendoEmailer {
 
     private static final String NEW_LINE = "<br>\n";
@@ -21,46 +35,102 @@ public class KendoEmailer {
     public static boolean sPreview;
     public static boolean sProduction;
 
-    // gradle -q buildAndSendEmail -Dexec.args="preview"
+    // Map from instructor id to the days they are teaching
+    // e.g. "Mark" -> "Tuesday and Thursday"
+    private static Map<String, String> sTeachingThisWeekMap = new HashMap<>();
+
+    // gradle -q run -Dexec.args="preview"
     public static void main(String[] args) {
         try {
-            Set<String> argumentSet = new HashSet<>();
-            for (int i = 0; i < args.length; i++) {
-                argumentSet.add(args[i]);
-            }
-
-            sPreview = argumentSet.contains(PREVIEW_SEND_KEY);
-            sProduction = argumentSet.contains(PRODUCTION_SEND_KEY);
-
-            if (sPreview) {
-                sProduction = false;
-            }
-
-            EMAIL_HEADER = loadStringFromFile("/email_header.txt");
-            EMAIL_FOOTER = loadStringFromFile("/email_footer.txt");
-            FROM_EMAIL_ADDRESS = loadStringFromFile("/email_from.txt");
-
-            // Get a list of upcoming events
-            List<Event> upcomingEvents = GoogleHelper.getUpcomingCalendarEvents();
-
-            System.out.println("KendoEmailer/main - upcomingEvents.size() = " + upcomingEvents.size());
-
-            // Create email object
-            EmailBuilder emailBuilder = createEmailBuilderWithSubjectAndBody(upcomingEvents);
-            emailBuilder.setToAndFromFields(FROM_EMAIL_ADDRESS);
-
-            if (!sPreview && !sProduction) {
-                System.out.println(emailBuilder.toString());
-            } else {
-                System.out.println("Sending email to " + EmailBuilder.getInstructorEmailList().size() + " people");
-                GoogleHelper.buildAndSendEmail(emailBuilder);
-            }
+            runKendoEmailer(args);
         } catch (Exception e) {
             System.out.println(e);
             e.printStackTrace();
         }
     }
 
+    private static void runKendoEmailer(String[] args) throws Exception {
+        Set<String> argumentSet = new HashSet<>();
+        for (int i = 0; i < args.length; i++) {
+            argumentSet.add(args[i]);
+        }
+
+        sPreview = argumentSet.contains(PREVIEW_SEND_KEY);
+        sProduction = argumentSet.contains(PRODUCTION_SEND_KEY);
+
+        // If we're in preview, we're definitely not in production
+        if (sPreview) {
+            sProduction = false;
+        }
+
+        EMAIL_HEADER = loadStringFromFile("/email_header.txt");
+        EMAIL_FOOTER = loadStringFromFile("/email_footer.txt");
+        FROM_EMAIL_ADDRESS = loadStringFromFile("/email_from.txt");
+
+        // Get a list of upcoming events from the GoogleHelper class
+        List<Event> upcomingEvents = GoogleHelper.getUpcomingCalendarEvents();
+
+        System.out.println("KendoEmailer/main - upcomingEvents.size() = " + upcomingEvents.size());
+
+        // Create email object with the main workhouse of this project
+        EmailBuilder emailBuilder = createEmailBuilderWithSubjectAndBody(upcomingEvents);
+
+        // If we're running without the preview or production flags just print
+        // out the email we have created.
+        if (!sPreview && !sProduction) {
+            System.out.println(emailBuilder.toString());
+        } else {
+            System.out.println("KendoEmailer/main - sending email to " + emailBuilder.getToEmailList().size() + " people");
+            GoogleHelper.buildAndSendEmail(emailBuilder);
+
+            if (sProduction) {
+                List<TextMessageHelper> textMessageHelperList = getMessagesToSend();
+                if (textMessageHelperList.size() > 0) {
+                    TwilioHelper twilioHelper = new TwilioHelper();
+                    for (TextMessageHelper textMessageHelper : textMessageHelperList) {
+                        if (textMessageHelper.contact.cellNumber.length() == 12) {
+                            twilioHelper.sendTextMessage(textMessageHelper.contact.cellNumber, textMessageHelper.getMessage());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Not everyone has a cell number!
+    private static List<TextMessageHelper> getMessagesToSend() {
+        List<TextMessageHelper> resultList = new ArrayList<>();
+
+        // Send text message reminder if the instructor is teaching this week and has a cell number in their info.
+        if (sTeachingThisWeekMap != null && sTeachingThisWeekMap.size() > 0) {
+            for (Map.Entry<String, String> entry : sTeachingThisWeekMap.entrySet()) {
+                String instructorId = entry.getKey();
+                String daysTeaching = entry.getValue();
+
+                Contact contact = EmailBuilder.getContactWithId(instructorId);
+
+                if (contact == null) {
+                    System.out.println("KendoEmailer/getMessagesToSend - no contact found for id = " + instructorId);
+                    continue;
+                }
+
+                String body = "You are teaching this coming " + daysTeaching + ".";
+
+                TextMessageHelper textMessageHelper = new TextMessageHelper();
+                textMessageHelper.contact = contact;
+                textMessageHelper.message = body;
+
+                resultList.add(textMessageHelper);
+            }
+        } else {
+            System.out.println("KendoEmailer/getMessagesToSend - sTeachingThisWeekMap is null or empty");
+        }
+
+        return resultList;
+    }
+
+    // Helper method that takes the content of the file in the passed parameter
+    // and returns it as a String.
     private static String loadStringFromFile(String filename) {
         InputStream inputStream = KendoEmailer.class.getResourceAsStream(filename);
         BufferedReader reader = null;
@@ -89,34 +159,7 @@ public class KendoEmailer {
         return stringBuilder.toString();
     }
 
-    static {
-        TimeZone.setDefault(getOurTimeZone());
-    }
-
-    private static TimeZone getOurTimeZone() {
-        return TimeZone.getTimeZone("America/Pacific");
-    }
-
-    // Given a DateTime, returns the day of the week (e.g. Monday, Tuesday)
-    private static String getNameOfDay(DateTime dateTime) {
-        GregorianCalendar calendar = new GregorianCalendar();
-        calendar.setTimeInMillis(dateTime.getValue());
-        calendar.setTimeZone(getOurTimeZone());
-        return calendar.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault());
-    }
-
-    private static String getDateFormatted(DateTime dateTime) {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("MM-dd-yyyy");
-        dateFormat.setTimeZone(getOurTimeZone());
-        return dateFormat.format(new Date(dateTime.getValue()));
-    }
-
-    private static String getTodaysDate() {
-        SimpleDateFormat dateFormat = new SimpleDateFormat("MM/dd");
-        dateFormat.setTimeZone(getOurTimeZone());
-        return dateFormat.format(new Date());
-    }
-
+    // This takes the list of Events returned by Google and constructs our email.
     public static EmailBuilder createEmailBuilderWithSubjectAndBody(List<Event> eventList) {
         LinkedHashMap<DateTime, List<String>> eventMap = new LinkedHashMap<>();
 
@@ -129,12 +172,21 @@ public class KendoEmailer {
                     break;
                 }
 
-                eventMap.put(startDateTime, new ArrayList<String>());
+                eventMap.put(startDateTime, new ArrayList<>());
             }
 
             if (eventMap.size() <= 2) {
-                teachingThisWeekSet.add(event.getSummary().split(" - ")[1]);
+                String instructorName = event.getSummary().split(" - ")[1];
+                teachingThisWeekSet.add(instructorName);
                 // teachingThisWeekSet.add(removeAllOccurrences(event.getSummary(), "", "A - ", "B - ", "C - ", "I - "));
+
+                String dayName = DateHelper.getNameOfDay(startDateTime);
+
+                if (sTeachingThisWeekMap.containsKey(instructorName)) {
+                    sTeachingThisWeekMap.put(instructorName, sTeachingThisWeekMap.get(instructorName) + " and " + dayName);
+                } else {
+                    sTeachingThisWeekMap.put(instructorName, dayName);
+                }
             }
 
             eventMap.get(startDateTime).add(event.getSummary());
@@ -147,9 +199,9 @@ public class KendoEmailer {
         }
 
         for (Map.Entry<DateTime, List<String>> entry : eventMap.entrySet()) {
-            String dayName = getNameOfDay(entry.getKey());
+            String dayName = DateHelper.getNameOfDay(entry.getKey());
 
-            sb.append("<b>" + dayName + " - " + getDateFormatted(entry.getKey()) + "</b>" + NEW_LINE);
+            sb.append("<b>" + dayName + " - " + DateHelper.getDateFormatted(entry.getKey()) + "</b>" + NEW_LINE);
 
             List<String> instructorList = entry.getValue();
             Collections.sort(instructorList);
@@ -161,10 +213,30 @@ public class KendoEmailer {
         }
 
         if (EMAIL_FOOTER.length() > 0) {
-            sb.append(NEW_LINE).append(EMAIL_FOOTER).append(NEW_LINE);
+            sb.append(EMAIL_FOOTER).append(NEW_LINE);
         }
 
         EmailBuilder emailBuilder = new EmailBuilder();
+
+        emailBuilder.setToAndFromFields(FROM_EMAIL_ADDRESS);
+
+        // For non-production show who we are texting and what we're texting them
+        if (!sProduction) {
+            sb.append(NEW_LINE).append("--~-- DEBUG --~--").append(NEW_LINE);
+
+            List<TextMessageHelper> textMessageHelperList = getMessagesToSend();
+            if (textMessageHelperList.size() > 0) {
+                for (TextMessageHelper textMessageHelper : textMessageHelperList) {
+                    if (textMessageHelper.contact.cellNumber.length() == 12) {
+                        sb.append(NEW_LINE).append(TAB).append(textMessageHelper.contact.fullName + ": " + textMessageHelper.message);
+                    } else {
+                        sb.append(NEW_LINE).append(TAB).append("No cell number on file for: " + textMessageHelper.contact.fullName);
+                    }
+                }
+            } else {
+                sb.append(NEW_LINE).append("getMessagesToSend() returned an empty list");
+            }
+        }
 
         emailBuilder.subject = prepareSubjectWithTeachingEvents(teachingThisWeekSet);
 
@@ -174,9 +246,9 @@ public class KendoEmailer {
     }
 
     private static String prepareSubjectWithTeachingEvents(Set<String> instructorNameSet) {
-        StringBuilder teachingThisWeekSb = new StringBuilder("[SF Kendo] " + getTodaysDate() + " - Teaching this week: ");
+        StringBuilder teachingThisWeekSb = new StringBuilder("[SF Kendo] " + DateHelper.getTodaysDate() + " - Teaching this week: ");
 
-        List<String> teachingThisWeekList = new ArrayList<String>();
+        List<String> teachingThisWeekList = new ArrayList<>();
         teachingThisWeekList.addAll(instructorNameSet);
         Collections.sort(teachingThisWeekList);
 

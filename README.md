@@ -1,6 +1,6 @@
 ## kendo-emailer
 
-A little utility that uses the [Google Apps API][2] to pull Calendar events and notify people about them by sending an email via the Gmail API.
+A little utility that uses the [Google Apps API][2] to pull Calendar events and notify people about them by sending an email via the Gmail API and text messages with the [Twilio API][4]. 
 As the repository name implies, I use this to automate sending out an email to the instructors of the [San Francisco Kendo Dojo][3] so they get a weekly friendly reminder when their class is coming up. 
 But you can adapt this to pull events and send mail for other reasons of course!
 
@@ -11,12 +11,26 @@ All these files should be placed in `src/main/resources`. Things will work best 
 * **email_footer.txt** - For text shown before the schedule print-out.
 * **email_from.txt** - For the email address that will be shown as the sender of the email.
 * **email_header.txt** - For text shown after the schedule print-out.
-* **instructors.csv** - Contacts that will be emailed. This file should look like:
+* **instructors.json** - Contacts that will be emailed. This file should look like:
 
 ```
-# Email, Full Name, Debug (if true, email is sent for Preview mode)
-mark@mailservice.com, Mark, true
-john@mailservice.com, John, false
+[
+  {"id": "Mark", "email": "mark@mailservice.com", "fullName": "Mark Cerqueira", "cellNumber": "+11112223344", "debug":true},
+  {"id": "John", "email": "john@mailservice.com", "fullName": "John Wu"},
+]
+```
+
+Debug means the person will get an email in "preview" mode.
+If a cell  number is defined that person will get a text message when they are teaching the following week.
+
+* **twilio_configuration.json** - Configuration information for using the Twilio API. This file should look like:
+
+```
+{
+  "accountSid": "your_account_sid",
+  "authToken": "your_auth_token",
+  "messageServiceSid": "your_message_service_sid"
+}
 ```
 
 ### Running kendo-emailer
@@ -64,3 +78,4 @@ Please contact the administrator if you cannot make a class you are scheduled to
 [1]: https://developers.google.com/gmail/api/quickstart/java#prerequisites
 [2]: https://developers.google.com/google-apps/
 [3]: http://www.sanfranciscokendo.org
+[4]: https://www.twilio.com

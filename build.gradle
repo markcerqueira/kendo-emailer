@@ -21,5 +21,7 @@ dependencies {
     compile 'com.google.oauth-client:google-oauth-client-jetty:1.20.0'
     compile 'com.google.apis:google-api-services-gmail:v1-rev29-1.20.0'
     compile 'com.google.apis:google-api-services-calendar:v3-rev125-1.20.0'
+    compile 'com.google.code.gson:gson:2.6.2'
+    compile "com.twilio.sdk:twilio-java-sdk:5.10.0"
     compile 'com.sun.mail:javax.mail:1.5.5'
 }

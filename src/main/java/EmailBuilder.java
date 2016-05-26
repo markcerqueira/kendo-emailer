@@ -1,64 +1,72 @@
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
+import com.google.gson.stream.JsonReader;
+import models.Contact;
+
 import javax.mail.internet.InternetAddress;
 import java.io.*;
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class EmailBuilder {
     public String subject;
     public String body;
     public String from;
-    public List<InternetAddress> toList;
+    public List<InternetAddress> toList = new ArrayList<>();
 
-    private static List<InternetAddress> sInstructorList = new ArrayList<>();
+    private static List<Contact> sInstructorList = new ArrayList<>();
+    private static Map<String, Contact> sInstructorMap = new HashMap<>();
 
     private static void refreshRecipientContactList() {
         sInstructorList.clear();
-
-        InputStream inputStream = EmailBuilder.class.getResourceAsStream("/instructors.csv");
-        BufferedReader reader = null;
+        sInstructorMap.clear();
 
         try {
-            reader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
-            String text;
+            InputStream inputStream = EmailBuilder.class.getResourceAsStream("/instructors.json");
+            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
+            JsonReader jsonReader = new JsonReader(bufferedReader);
 
-            while ((text = reader.readLine()) != null) {
-                // Header that describes structure so skip
-                if (text.startsWith("#")) {
-                    continue;
-                }
+            Type CONTACT_TYPE = new TypeToken<List<Contact>>(){}.getType();
+            Gson gson = new Gson();
 
-                Contact instructorContact = new Contact(text);
-
-                if (!KendoEmailer.sProduction && !instructorContact.debug) {
-                    continue;
-                }
-
-                sInstructorList.add(new InternetAddress(instructorContact.email, instructorContact.fullName));
-            }
+            sInstructorList = gson.fromJson(jsonReader, CONTACT_TYPE);
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            try {
-                if (reader != null) {
-                    reader.close();
-                }
-            } catch (IOException e) {
-                // Ignore
-            }
+        }
+
+        for (Contact contact : sInstructorList) {
+            sInstructorMap.put(contact.id, contact);
         }
 
         System.out.println("refreshRecipientContactList - sInstructorList.size() = " + sInstructorList.size());
     }
 
-    public static List<InternetAddress> getInstructorEmailList() {
-        return sInstructorList;
+    public List<InternetAddress> getToEmailList() {
+        return this.toList;
     }
 
     public void setToAndFromFields(String fromEmail) {
         refreshRecipientContactList();
 
         this.from = fromEmail;
-        this.toList = sInstructorList;
+        this.toList.clear();
+
+        for (Contact contact : sInstructorList) {
+            // System.out.println(contact);
+
+            if (!KendoEmailer.sProduction && !contact.debug) {
+                continue;
+            }
+
+            try {
+                this.toList.add(new InternetAddress(contact.email, contact.fullName));
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     public String toString() {
@@ -80,5 +88,9 @@ public class EmailBuilder {
         sb.append(body);
 
         return sb.toString();
+    }
+
+    public static Contact getContactWithId(String id) {
+        return sInstructorMap.get(id);
     }
 }
