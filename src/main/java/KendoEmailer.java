@@ -169,6 +169,17 @@ public class KendoEmailer {
 
         Set<String> teachingThisWeekSet = new HashSet<>();
 
+        // We will use this to ensure we don't look more than 2 weeks ahead
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(new Date());
+        calendar.add(Calendar.DATE, 14);
+        long twoWeeksFromNowMillis = calendar.getTimeInMillis();
+
+        // We will use this to ensure we only show instructors teaching this week in the subject line
+        calendar.setTime(new Date());
+        calendar.add(Calendar.DATE, 7);
+        long oneWeekFromNowMillis = calendar.getTimeInMillis();
+
         for (Event event : eventList) {
             // Skip events that start with a "-" since that denotes a special day and not a teaching event
             if (event.getSummary().startsWith("-")) {
@@ -176,6 +187,10 @@ public class KendoEmailer {
             }
 
             DateTime startDateTime = event.getStart().getDate();
+
+            if (startDateTime.getValue() > twoWeeksFromNowMillis) {
+                continue;
+            }
 
             if (!eventMap.containsKey(startDateTime)) {
                 if (eventMap.size() > 3) {
@@ -185,7 +200,7 @@ public class KendoEmailer {
                 eventMap.put(startDateTime, new ArrayList<>());
             }
 
-            if (eventMap.size() <= 2) {
+            if (startDateTime.getValue() < oneWeekFromNowMillis && eventMap.size() <= 2) {
                 String instructorName = event.getSummary().split(" - ")[1];
                 teachingThisWeekSet.add(instructorName);
                 // teachingThisWeekSet.add(removeAllOccurrences(event.getSummary(), "", "A - ", "B - ", "C - ", "I - "));
