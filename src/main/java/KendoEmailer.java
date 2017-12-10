@@ -11,14 +11,14 @@ import java.util.*;
 
 /**
  * KendoEmailer.java
- *
+ * <p>
  * Main entry-point for the app.
- *
+ * <p>
  * Run from the command-line:
- *  gradle -q run
- *
+ * gradle -q run
+ * <p>
  * And with arguments:
- *  gradle -q run -Dexec.args="preview"
+ * gradle -q run -Dexec.args="preview"
  */
 public class KendoEmailer {
 
@@ -75,6 +75,8 @@ public class KendoEmailer {
         // Create email object with the main workhouse of this project
         EmailBuilder emailBuilder = createEmailBuilderWithSubjectAndBody(upcomingEvents);
 
+        System.out.println("KendoEmailer/main - createEmailBuilderWithSubjectAndBody done");
+
         // If we're running without the preview or production flags just print
         // out the email we have created.
         if (!sPreview && !sProduction) {
@@ -82,6 +84,8 @@ public class KendoEmailer {
         } else {
             System.out.println("KendoEmailer/main - sending email to " + emailBuilder.getToEmailList().size() + " people");
             GoogleHelper.buildAndSendEmail(emailBuilder);
+
+            System.out.println("KendoEmailer/main - buildAndSendEmail done");
 
             if (sProduction) {
                 List<TextMessageHelper> textMessageHelperList = getMessagesToSend();
@@ -166,7 +170,13 @@ public class KendoEmailer {
         Set<String> teachingThisWeekSet = new HashSet<>();
 
         for (Event event : eventList) {
+            // Skip events that start with a "-" since that denotes a special day and not a teaching event
+            if (event.getSummary().startsWith("-")) {
+                continue;
+            }
+
             DateTime startDateTime = event.getStart().getDate();
+
             if (!eventMap.containsKey(startDateTime)) {
                 if (eventMap.size() > 3) {
                     break;
